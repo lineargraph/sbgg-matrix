@@ -20,18 +20,6 @@ struct SupportContact {
 	role: Option<String>,
 }
 
-async fn well_known_support(State(state): State<AppState>) -> impl IntoResponse {
-	Json(WellKnownServerSupport {
-		support_page: None,
-		contacts: state.config.contact.iter().cloned().collect(),
-	})
-}
-async fn well_known_server(State(state): State<AppState>) -> impl IntoResponse {
-	Json(WellKnownServerResponse {
-		server: state.config.delegate_url.clone(),
-	})
-}
-
 #[derive(Deserialize, Debug)]
 struct Config {
 	contact: Option<SupportContact>,
@@ -60,6 +48,7 @@ async fn main() -> eyre::Result<()> {
 	let router = Router::new()
 		.route("/.well-known/matrix/server", get(well_known_server))
 		.route("/.well-known/matrix/support", get(well_known_support))
+		.route("/_matrix/federation/v1/version", get(version))
 		.with_state(AppState {
 			config: config.clone(),
 		});
@@ -67,4 +56,25 @@ async fn main() -> eyre::Result<()> {
 
 	axum::serve(listener, router).await?;
 	Ok(())
+}
+
+async fn version() -> impl IntoResponse {
+	Json(serde_json::json!({
+		"server": {
+			"name": "sbgg-matrix",
+			"version": env!("CARGO_PKG_VERSION"),
+		},
+	}))
+}
+
+async fn well_known_support(State(state): State<AppState>) -> impl IntoResponse {
+	Json(WellKnownServerSupport {
+		support_page: None,
+		contacts: state.config.contact.iter().cloned().collect(),
+	})
+}
+async fn well_known_server(State(state): State<AppState>) -> impl IntoResponse {
+	Json(WellKnownServerResponse {
+		server: state.config.delegate_url.clone(),
+	})
 }
