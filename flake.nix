@@ -27,7 +27,9 @@
           })
         ];
         programs.alejandra.enable = true;
+
         programs.rustfmt.enable = true;
+        settings.formatter.rustfmt.options = ["--config-path" "${./rustfmt.toml}"];
       };
     in {
       formatter = treefmtEval.config.build.wrapper;
