@@ -6,7 +6,7 @@ use axum::{
 	routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, usize};
+use std::{collections::HashMap, sync::Arc, usize};
 use tracing::error;
 
 #[derive(Serialize)]
@@ -32,6 +32,20 @@ struct Config {
 	contact: Option<SupportContact>,
 	delegate_url: String,
 	public_rooms: Vec<PublicRoom>,
+	aliases: HashMap<String, Alias>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum Alias {
+	Direct {
+		room_id: String,
+		servers: Vec<String>,
+	},
+	Redirect {
+		room_name: String,
+		home_server: String,
+	},
 }
 
 #[derive(Clone)]
@@ -57,6 +71,12 @@ where
 impl IntoResponse for Report {
 	fn into_response(self) -> axum::response::Response {
 		let Self(err) = self;
+
+		let err = match err.downcast::<MatrixError>() {
+			Ok(intentional) => return (StatusCode::BAD_REQUEST, Json(intentional)).into_response(),
+			Err(err) => err,
+		};
+
 		let error_msg = format!("{err}");
 
 		error!(?err);
@@ -71,10 +91,17 @@ impl IntoResponse for Report {
 			.into_response()
 	}
 }
+
+macro_rules! bail {
+    ($($rest:tt)*) => {
+		return Err(eyre::eyre!($($rest)*).into())
+    };
+}
+
 macro_rules! ensure {
 	($cond:expr, $($rest:tt)*) => {
 		if !($cond) {
-			let _discard: () = Err(eyre::eyre!($($rest)*))?;
+			bail!($($rest)*)
 		}
 	};
 }
@@ -98,6 +125,10 @@ async fn main() -> Result<()> {
 		.route("/.well-known/matrix/support", get(well_known_support))
 		.route("/_matrix/federation/v1/version", get(version))
 		.route("/_matrix/federation/v1/publicRooms", get(public_rooms))
+		.route(
+			"/_matrix/federation/v1/query/directory",
+			get(query_directory),
+		)
 		.with_state(AppState {
 			config: config.clone(),
 		});
@@ -105,6 +136,86 @@ async fn main() -> Result<()> {
 
 	axum::serve(listener, router).await?;
 	Ok(())
+}
+#[derive(Deserialize)]
+struct RoomQuery {
+	room_alias: String,
+}
+#[derive(Serialize, Clone, Deserialize)]
+struct RoomQueryResponse {
+	room_id: String,
+	servers: Vec<String>,
+}
+
+async fn query_directory(
+	Query(query): Query<RoomQuery>,
+	State(state): State<AppState>,
+) -> Result<impl IntoResponse> {
+	match state.config.aliases.get(&query.room_alias) {
+		Some(resolved) => match resolved {
+			Alias::Direct { room_id, servers } => {
+				return Ok(Json(RoomQueryResponse {
+					room_id: room_id.clone(),
+					servers: servers.clone(),
+				}));
+			}
+			Alias::Redirect {
+				room_name,
+				home_server,
+			} => {
+				let result = match query_cache(home_server.clone(), room_name.clone()).await {
+					Ok(o) => o,
+					Err(e) => {
+						bail!("Failed to resolve redirect alias {}", e.0);
+					}
+				};
+				return Ok(Json(result));
+			}
+		},
+		None => bail!(MatrixError {
+			error: "M_NOT_FOUND".into(),
+			errcode: format!("could not find alias for room {}", query.room_alias),
+		}),
+	}
+}
+
+use std::time::Duration;
+
+#[cached::proc_macro::cached(time = 3600)]
+async fn query_cache(
+	home_server: String,
+	room_name: String,
+) -> Result<RoomQueryResponse, Arc<Report>> {
+	async fn internal(home_server: &str, room_name: &str) -> Result<RoomQueryResponse> {
+		let mut url = reqwest::Url::parse(&format!(
+			"https://{home_server}/_matrix/client/v3/directory/room"
+		))?;
+		url.path_segments_mut().unwrap().push(&room_name);
+		let resp = reqwest::get(url).await?;
+		let result: RoomQueryResponse = resp.json().await?;
+		let main_server = match result.servers.first() {
+			Some(main_server) => main_server,
+			None => bail!("missing servers in server list for {}", room_name),
+		};
+		let room_id = if result.room_id.contains(':') {
+			result.room_id
+		} else {
+			format!("{}:{}", result.room_id, main_server)
+		};
+
+		Ok(RoomQueryResponse {
+			room_id,
+			servers: result.servers,
+		})
+	}
+	internal(&home_server, &room_name).await.map_err(Arc::new)
+}
+
+#[derive(Serialize, thiserror::Error, Debug)]
+#[error("intentional matrix error")]
+struct MatrixError {
+	error: String,
+	errcode: String,
 }
 
 #[derive(Deserialize)]
