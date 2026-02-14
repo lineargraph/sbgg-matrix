@@ -166,7 +166,7 @@ async fn query_directory(
 				let result = match query_cache(home_server.clone(), room_name.clone()).await {
 					Ok(o) => o,
 					Err(e) => {
-						bail!("Failed to resolve redirect alias {}", e.0);
+						bail!("Failed to resolve redirect alias");
 					}
 				};
 				return Ok(Json(result));
@@ -208,7 +208,16 @@ async fn query_cache(
 			servers: result.servers,
 		})
 	}
-	internal(&home_server, &room_name).await.map_err(Arc::new)
+	match internal(&home_server, &room_name).await {
+		Ok(o) => Ok(o),
+		Err(e) => {
+			error!(
+				?e,
+				"Error during resolution of {home_server} from {room_name}"
+			);
+			Err(Arc::new(e))
+		}
+	}
 }
 
 #[derive(Serialize, thiserror::Error, Debug)]
