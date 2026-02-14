@@ -23,7 +23,7 @@
         imports = [
           (haskell-json-fmt.lib.mkTreefmtModule {
             inherit pkgs;
-            includes = ["*.json" "*.yml"];
+            includes = ["*.json"];
           })
         ];
         programs.alejandra.enable = true;
