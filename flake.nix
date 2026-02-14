@@ -6,6 +6,8 @@
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
     haskell-json-fmt.url = "github:lineargraph/haskell-json-fmt";
     haskell-json-fmt.inputs.nixpkgs.follows = "nixpkgs";
+    naersk.url = "github:nix-community/naersk";
+    naersk.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
@@ -13,11 +15,13 @@
     flake-utils,
     nixpkgs,
     treefmt-nix,
+    naersk,
     self,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
+      naersk' = pkgs.callPackage naersk {};
       treefmtEval = treefmt-nix.lib.evalModule pkgs {
         projectRootFile = "flake.nix";
         imports = [
@@ -37,17 +41,14 @@
       checks.formatting = treefmtEval.config.build.check self;
       packages = rec {
         default = sbgg-matrix;
-        sbgg-matrix = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+        sbgg-matrix = naersk'.buildPackage {
           pname = cargoToml.package.name;
           version = cargoToml.package.version;
           src = ./.;
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-          };
           meta = {
             description = cargoToml.package.description;
           };
-        });
+        };
         sbgg-matrix-docker = pkgs.dockerTools.buildImage {
           name = "sbgg-matrix";
           tag = "latest";
