@@ -235,6 +235,7 @@ struct MatrixError {
 #[derive(Deserialize)]
 struct PublicRoomQuery {
 	#[serde(default)]
+	#[allow(unused)]
 	include_all_networks: bool,
 	#[serde(default)]
 	limit: usize,
@@ -286,11 +287,7 @@ async fn public_rooms(
 		offset.saturating_add(query.limit)
 	};
 	ensure!(offset <= rooms.len(), "Since too big");
-	let view = if query.include_all_networks {
-		&rooms[offset..(limit.min(rooms.len()))]
-	} else {
-		&[]
-	};
+	let view = &rooms[offset..(limit.min(rooms.len()))];
 	Ok(Json(PublicRoomResponse {
 		total_room_count_estimate: rooms.len(),
 		chunk: view.into(),
