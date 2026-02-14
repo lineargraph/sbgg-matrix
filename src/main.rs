@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, usize};
-use tracing::error;
+use tracing::{error, info};
 
 #[derive(Serialize)]
 struct WellKnownServerResponse {
@@ -109,9 +109,11 @@ macro_rules! ensure {
 #[tokio::main]
 async fn main() -> Result<()> {
 	tracing_subscriber::fmt::init();
+	info!("starting sbgg");
 	let config: Config =
 		serde_json::de::from_str(&tokio::fs::read_to_string("config.json").await?)?;
 	let config = Arc::new(config);
+	info!("config read");
 
 	// TODO: path to server
 	//  - /.well-known/matrix/server (reference to this server itself, with port)
@@ -132,8 +134,11 @@ async fn main() -> Result<()> {
 		.with_state(AppState {
 			config: config.clone(),
 		});
-	let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await?;
 
+	let addr = "0.0.0.0:8000";
+	let listener = tokio::net::TcpListener::bind(&addr).await?;
+
+	info!("preparing to listen on {addr}");
 	axum::serve(listener, router).await?;
 	Ok(())
 }
@@ -165,7 +170,7 @@ async fn query_directory(
 			} => {
 				let result = match query_cache(home_server.clone(), room_name.clone()).await {
 					Ok(o) => o,
-					Err(e) => {
+					Err(_) => {
 						bail!("Failed to resolve redirect alias");
 					}
 				};
