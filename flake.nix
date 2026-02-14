@@ -59,6 +59,10 @@
           config = {
             Cmd = ["${sbgg-matrix}/bin/sbgg-matrix"];
             WorkingDir = "/data";
+            Env = [
+              "RUST_LOG=info"
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            ];
           };
         };
       };
