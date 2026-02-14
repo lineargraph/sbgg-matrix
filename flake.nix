@@ -31,9 +31,36 @@
         programs.rustfmt.enable = true;
         settings.formatter.rustfmt.options = ["--config-path" "${./rustfmt.toml}"];
       };
+      cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
     in {
       formatter = treefmtEval.config.build.wrapper;
       checks.formatting = treefmtEval.config.build.check self;
+      packages = rec {
+        default = sbgg-matrix;
+        sbgg-matrix = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+          pname = cargoToml.package.name;
+          version = cargoToml.package.version;
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+          meta = {
+            description = cargoToml.package.description;
+          };
+        });
+        sbgg-matrix-docker = pkgs.dockerTools.buildImage {
+          name = "sbgg-matrix";
+          tag = "latest";
+          runAsRoot = ''
+            #!${pkgs.runtimeShell}
+            mkdir -p /data
+          '';
+          config = {
+            Cmd = ["${sbgg-matrix}/bin/sbgg-matrix"];
+            WorkingDir = "/data";
+          };
+        };
+      };
       devShells.default = pkgs.mkShell {
         buildInputs = [
           treefmtEval.config.build.wrapper

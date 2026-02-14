@@ -2,6 +2,7 @@
 name = "sbgg-matrix"
 version = "0.1.0"
 edition = "2024"
+description = "Meow :3 Decide on your own names on a matrix server without uhhh having a matrix server..."
 
 [dependencies]
 axum = { version = "0.8.8", features = ["macros"] }
